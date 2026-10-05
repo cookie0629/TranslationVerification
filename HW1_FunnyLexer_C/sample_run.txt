@@ -1,0 +1,84 @@
+============================================================
+ HW1 Funny Lexer: Regex -> NFA -> DFA -> Hopcroft Min-DFA
+============================================================
+
+=== REGEX SPECIFICATION ===
+ 0  KW_FUNCTION     function
+ 1  KW_RETURNS      returns
+ 2  KW_WHILE        while
+ 3  KW_IF           if
+ 4  KW_ELSE         else
+ 5  KW_ASSERT       assert
+ 6  KW_ASSUME       assume
+ 7  KW_INVARIANT    invariant
+ 8  KW_LENGTH       length
+ 9  BAD_INT         0[0-9]+  [error]
+10  INT             0|[1-9][0-9]*
+11  IDENT           [A-Za-z_][A-Za-z0-9_]*
+12  EQ              ==
+13  NE              !=
+14  LE              <=
+15  GE              >=
+16  LT              <
+17  GT              >
+18  ASSIGN          =
+19  PLUS            \+
+20  MINUS           -
+21  STAR            \*
+22  SLASH           /
+23  LPAREN          \(
+24  RPAREN          \)
+25  LBRACKET        \[
+26  RBRACKET        \]
+27  LBRACE          \{
+28  RBRACE          \}
+29  COMMA           ,
+30  SEMICOLON       ;
+31  WS              [ \t\r\n]+  [skip]
+32  COMMENT         //[^\r\n]*  [skip]
+
+NFA states: 187
+NFA edges : 463
+DFA states before minimization: 79
+Minimized DFA states: 77
+Trap state: represented by explicit complete-DFA state 79 before minimization;
+           after minimization it is the non-accepting sink class.
+
+Generated: funny_dfa.json
+Generated: funny_dfa.csv
+
+=== TESTS ===
+[PASS]                              -> 
+[PASS]    	
+                       -> 
+[PASS] 0                            -> INT(0)
+[PASS] 00                           -> ERROR
+[PASS] 01                           -> ERROR
+[PASS] 12345                        -> INT(12345)
+[PASS] _                            -> IDENT(_)
+[PASS] _abc123                      -> IDENT(_abc123)
+[PASS] abc_                         -> IDENT(abc_)
+[PASS] function                     -> KW_FUNCTION(function)
+[PASS] returns                      -> KW_RETURNS(returns)
+[PASS] while                        -> KW_WHILE(while)
+[PASS] if                           -> KW_IF(if)
+[PASS] else                         -> KW_ELSE(else)
+[PASS] assert                       -> KW_ASSERT(assert)
+[PASS] assume                       -> KW_ASSUME(assume)
+[PASS] invariant                    -> KW_INVARIANT(invariant)
+[PASS] length                       -> KW_LENGTH(length)
+[PASS] functionx                    -> IDENT(functionx)
+[PASS] ()                           -> LPAREN(() RPAREN())
+[PASS] []{}                         -> LBRACKET([) RBRACKET(]) LBRACE({) RBRACE(})
+[PASS]  ,;                          -> COMMA(,) SEMICOLON(;)
+[PASS] + - * /                      -> PLUS(+) MINUS(-) STAR(*) SLASH(/)
+[PASS] == != <= >= < > =            -> EQ(==) NE(!=) LE(<=) GE(>=) LT(<) GT(>) ASSIGN(=)
+[PASS] // hello world               -> 
+[PASS] // hello
+x                  -> IDENT(x)
+[PASS] a_b 123 function returns     -> IDENT(a_b) INT(123) KW_FUNCTION(function) KW_RETURNS(returns)
+[PASS] a@b                          -> ERROR
+[PASS] é                           -> ERROR
+[PASS] abc                         -> ERROR
+Tests: 30/30 passed
+

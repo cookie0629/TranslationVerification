@@ -1,0 +1,37 @@
+# HW1 test cases
+
+## Positive
+
+""
+"   \t\r\n"
+"0"
+"12345"
+"_"
+"_abc123"
+"abc_"
+"function"
+"returns"
+"while"
+"if"
+"else"
+"assert"
+"assume"
+"invariant"
+"length"
+"functionx"
+"()"
+"[]{}"
+",;"
+"+ - * /"
+"== != <= >= < > ="
+"// hello world"
+"// hello\r\nx"
+"a_b 123 function returns"
+
+## Negative
+
+"00"
+"01"
+"a@b"
+"é"
+"abc\x01"
