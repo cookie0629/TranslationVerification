@@ -1,0 +1,2 @@
+first(x: int) returns r: int { r = second(x); }
+second(x: int) returns r: int { r = x + 1; }

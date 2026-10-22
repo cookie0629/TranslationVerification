@@ -70,6 +70,17 @@ main.exe
 | `assume` | `assume` | keyword |
 | `invariant` | `invariant` | keyword |
 | `length` | `length` | keyword |
+| `requires` | `requires` | keyword |
+| `ensures` | `ensures` | keyword |
+| `uses` | `uses` | keyword |
+| `forall` | `forall` | keyword |
+| `exists` | `exists` | keyword |
+| `true` | `true` | keyword |
+| `false` | `false` | keyword |
+| `not` | `not` | keyword |
+| `and` | `and` | keyword |
+| `or` | `or` | keyword |
+| `int` | `int` | keyword |
 | `BAD_INT` | `0[0-9]+` | error |
 | `INT` | `0|[1-9][0-9]*` | accepting |
 | `IDENT` | `[A-Za-z_][A-Za-z0-9_]*` | accepting |
@@ -92,6 +103,10 @@ main.exe
 | `RBRACE` | `\}` | accepting |
 | `COMMA` | `,` | accepting |
 | `SEMICOLON` | `;` | accepting |
+| `COLON` | `:` | accepting |
+| `PIPE` | `\|` | accepting |
+| `IMPLIES` | `=>` | accepting |
+| `ARROW` | `->` | accepting |
 | `WS` | `[ \t\r\n]+` | skip |
 | `COMMENT` | `//[^\r\n]*` | skip |
 
@@ -530,3 +545,62 @@ Minimized DFA states: ...
 11. T0 reuse
 12. Conclusion
 ```
+
+## 14. v2 变更：为 HW2 补齐 Funny token 集
+
+### 14.1 变更内容 / Что изменилось
+
+HW2（语法分析器）需要按课程规范 `funny.ru.md` 解析语言，但原规则表缺少规范里的若干 token。
+本次（v2）在 `RULES[]` 中补充：
+
+| 类别 | 新增规则 | priority |
+|---|---|---|
+| 关键字 | `requires` `ensures` `uses` `forall` `exists` `true` `false` `not` `and` `or` `int` | 9–19 |
+| 运算符 | `IMPLIES` = `=>`、`ARROW` = `->` | 61、62 |
+| 分隔符 | `COLON` = `:`、`PIPE` = `\|` | 78、79 |
+
+关键字优先级 9–19 恰好填满 `KW_LENGTH`(8) 与 `BAD_INT`(20) 之间的空档，
+因此「等长匹配看优先级」这条规则依旧成立：`int` 仍然优先于 `IDENT`。
+
+Добавлены ключевые слова и операторы языка Funny, которых требовала
+спецификация `funny.ru.md` (`requires`, `ensures`, `uses`, `forall`, `exists`,
+`true`, `false`, `not`, `and`, `or`, `int`, а также `=>`, `->`, `:`, `|`).
+Приоритеты 9–19 заполняют промежуток между `KW_LENGTH` и `BAD_INT`, поэтому
+правило «при равной длине выигрывает меньший приоритет» продолжает работать.
+
+### 14.2 CSV 导出格式 v2 / Формат CSV v2
+
+CSV 现在多一行注释头，用来保存**起始状态**（表体本身无法表达它）：
+
+```text
+# funny_dfa v2 start=0 states=125
+state,accept,0,1,2,...,127
+0,-,...
+1,IDENT,...
+```
+
+HW2 在运行时加载该文件并用最小化 DFA 做最大匹配扫描。
+如果没有这一行（旧版导出），HW2 会明确拒绝该表并回退到内置扫描器，
+而不是去猜起始状态。
+
+Файл CSV получил строку-комментарий с начальным состоянием.  HW2 загружает
+эту таблицу во время работы и выполняет сканирование по минимальному DFA.
+Без этой строки таблица считается устаревшей и отвергается.
+
+### 14.3 重新生成 / Перегенерация
+
+修改规则表后必须重新运行 HW1，否则 `funny_dfa.csv` 与 `funny_dfa.json` 仍是旧版：
+
+```powershell
+cd HW1_FunnyLexer_C
+gcc -std=c99 -O2 -Wall -Wextra -pedantic main.c -o funny_hw1.exe
+.\funny_hw1.exe          # 重新生成 funny_dfa.json / funny_dfa.csv 并跑内置测试
+```
+
+```bash
+cd HW1_FunnyLexer_C
+make && ./funny_hw1
+```
+
+После изменения таблицы правил обязательно перезапустите HW1, иначе CSV/JSON
+останутся от старой версии.

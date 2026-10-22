@@ -1,0 +1,4 @@
+bad(a: int[]) returns r: int uses x: int {
+  x = a;
+  r = a[true];
+}

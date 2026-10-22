@@ -1,0 +1,10 @@
+bad(a: int, a: int) returns r: int uses tmp: int, tmp: int, inferred {
+  a = 1;
+  r = missing + 1;
+  tmp = true;
+  r = length(a);
+  r = nofunc(1);
+  r = 1;
+}
+
+bad(x: int) returns y: int { y = x; }

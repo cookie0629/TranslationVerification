@@ -1,0 +1,6 @@
+bad() returns r: int uses x, y {
+  r = x;
+  x = 1;
+  x = true;
+  r = 1;
+}

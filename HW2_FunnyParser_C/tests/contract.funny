@@ -1,0 +1,14 @@
+nonnegative(x: int) => x >= 0
+
+copy_and_count(a: int[], n: int) requires n >= 0 and forall(k: int | k >= 0) returns out: int[], count: int ensures count >= 0 uses i: int {
+  out = a;
+  count = 0;
+  i = 0;
+  while (i < n) invariant i >= 0 {
+    out[i] = i * 2;
+    count = count + 1;
+    i = i + 1;
+  }
+  if (count == n) assert nonnegative(count);
+  else assume false;
+}

@@ -1,0 +1,6 @@
+choose(a: int, b: int, data: int[]) returns result: int {
+  result = -a + b * 2;
+  if (not a == b and true or false -> a < b) {
+    result = length(data) + result;
+  }
+}

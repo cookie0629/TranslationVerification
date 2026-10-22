@@ -1,0 +1,1 @@
+bad(a: int[]) returns y: int { y = a[0; y = 2; }

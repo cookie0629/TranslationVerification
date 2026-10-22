@@ -54,6 +54,21 @@ static const Rule RULES[] = {
     {"KW_ASSUME", "assume", TOK_KEYWORD, 6},
     {"KW_INVARIANT", "invariant", TOK_KEYWORD, 7},
     {"KW_LENGTH", "length", TOK_KEYWORD, 8},
+    /* Keywords of the Funny specification (funny.ru.md) that the parser of
+       HW2 needs: pre/postconditions, formula quantifiers and boolean logic.
+       Priorities 9..19 fill the gap up to BAD_INT, so a keyword still wins
+       over IDENT on an equal-length match. */
+    {"KW_REQUIRES", "requires", TOK_KEYWORD, 9},
+    {"KW_ENSURES", "ensures", TOK_KEYWORD, 10},
+    {"KW_USES", "uses", TOK_KEYWORD, 11},
+    {"KW_FORALL", "forall", TOK_KEYWORD, 12},
+    {"KW_EXISTS", "exists", TOK_KEYWORD, 13},
+    {"KW_TRUE", "true", TOK_KEYWORD, 14},
+    {"KW_FALSE", "false", TOK_KEYWORD, 15},
+    {"KW_NOT", "not", TOK_KEYWORD, 16},
+    {"KW_AND", "and", TOK_KEYWORD, 17},
+    {"KW_OR", "or", TOK_KEYWORD, 18},
+    {"KW_INT", "int", TOK_KEYWORD, 19},
 
     {"BAD_INT", "0[0-9]+", TOK_BAD_INT, 20},
     {"INT", "0|[1-9][0-9]*", TOK_INT, 30},
@@ -70,6 +85,10 @@ static const Rule RULES[] = {
     {"MINUS", "-", TOK_OPERATOR, 58},
     {"STAR", "\\*", TOK_OPERATOR, 59},
     {"SLASH", "/", TOK_OPERATOR, 60},
+    /* "=>" introduces a formula, "->" is implication; maximal munch keeps
+       them apart from "=" and "-". */
+    {"IMPLIES", "=>", TOK_OPERATOR, 61},
+    {"ARROW", "->", TOK_OPERATOR, 62},
 
     {"LPAREN", "\\(", TOK_DELIM, 70},
     {"RPAREN", "\\)", TOK_DELIM, 71},
@@ -79,6 +98,8 @@ static const Rule RULES[] = {
     {"RBRACE", "\\}", TOK_DELIM, 75},
     {"COMMA", ",", TOK_DELIM, 76},
     {"SEMICOLON", ";", TOK_DELIM, 77},
+    {"COLON", ":", TOK_DELIM, 78},
+    {"PIPE", "\\|", TOK_DELIM, 79},
 
     {"WS", "[ \\t\\r\\n]+", TOK_SKIP, 90},
     {"COMMENT", "//[^\\r\\n]*", TOK_SKIP, 91},
@@ -777,6 +798,36 @@ static const Test TESTS[] = {
     {"invariant", "KW_INVARIANT(invariant)", true},
     {"length", "KW_LENGTH(length)", true},
     {"functionx", "IDENT(functionx)", true},
+
+    /* Tokens added for the Funny specification and the HW2 parser. */
+    {"requires", "KW_REQUIRES(requires)", true},
+    {"ensures", "KW_ENSURES(ensures)", true},
+    {"uses", "KW_USES(uses)", true},
+    {"forall", "KW_FORALL(forall)", true},
+    {"exists", "KW_EXISTS(exists)", true},
+    {"true", "KW_TRUE(true)", true},
+    {"false", "KW_FALSE(false)", true},
+    {"not", "KW_NOT(not)", true},
+    {"and", "KW_AND(and)", true},
+    {"or", "KW_OR(or)", true},
+    {"int", "KW_INT(int)", true},
+    /* A keyword only wins when the whole lexeme matches: these stay IDENT. */
+    {"requiresx", "IDENT(requiresx)", true},
+    {"intx", "IDENT(intx)", true},
+    {"notion", "IDENT(notion)", true},
+    {"ordering", "IDENT(ordering)", true},
+    {"int[]", "KW_INT(int) LBRACKET([) RBRACKET(])", true},
+    {"=> ->", "IMPLIES(=>) ARROW(->)", true},
+    {": |", "COLON(:) PIPE(|)", true},
+    {"i: int | i > 0", "IDENT(i) COLON(:) KW_INT(int) PIPE(|) IDENT(i) GT(>) INT(0)", true},
+    /* Maximal munch beats the shorter rules "=" and "-". */
+    {"a->b", "IDENT(a) ARROW(->) IDENT(b)", true},
+    {"a-1", "IDENT(a) MINUS(-) INT(1)", true},
+    {"a = => b", "IDENT(a) ASSIGN(=) IMPLIES(=>) IDENT(b)", true},
+    /* Characters outside the Funny token set stay lexical errors. */
+    {"%", "ERROR", false},
+    {"!", "ERROR", false},
+    {"a && b", "ERROR", false},
     {"()", "LPAREN(() RPAREN())", true},
     {"[]{}", "LBRACKET([) RBRACKET(]) LBRACE({) RBRACE(})", true},
     {" ,;", "COMMA(,) SEMICOLON(;)", true},
@@ -831,10 +882,16 @@ static void run_tests(const int *tr, int start, const int *acc) {
 
 /*
  * A small machine-readable CSV export is also generated.
+ *
+ * Format ("v2"): a leading comment carries the start state and the state
+ * count, which the table itself does not express.  HW2 loads this file at run
+ * time to scan with the minimized automaton, and refuses a table without that
+ * line instead of guessing the start state.
  */
-static void export_csv(const char *path, int n, const int *tr, const int *acc) {
+static void export_csv(const char *path, int n, const int *tr, const int *acc, int start) {
     FILE *f = fopen(path, "w");
     if (!f) { perror(path); return; }
+    fprintf(f, "# funny_dfa v2 start=%d states=%d\n", start, n);
     fprintf(f, "state,accept");
     for (int c = 0; c < ASCII_N; ++c) fprintf(f, ",%d", c);
     fprintf(f, "\n");
@@ -877,7 +934,7 @@ int main(void) {
     printf("           after minimization it is the non-accepting sink class.\n\n");
 
     export_json("funny_dfa.json", min_n, min_t, min_acc, min_start);
-    export_csv("funny_dfa.csv", min_n, min_t, min_acc);
+    export_csv("funny_dfa.csv", min_n, min_t, min_acc, min_start);
     printf("Generated: funny_dfa.json\n");
     printf("Generated: funny_dfa.csv\n\n");
 

@@ -1,0 +1,4 @@
+bad(a: int[]) returns r: int {
+  a[true] = 1;
+  r = a[false];
+}

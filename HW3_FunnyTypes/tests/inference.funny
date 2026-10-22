@@ -1,0 +1,5 @@
+infer(a: int[]) returns r: int uses temporary, copy {
+  temporary = 1;
+  copy = a;
+  r = copy[0] + temporary;
+}

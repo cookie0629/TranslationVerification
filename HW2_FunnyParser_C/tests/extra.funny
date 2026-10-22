@@ -1,0 +1,1 @@
+bad() returns y: int { y = 1; ; y = 2; }

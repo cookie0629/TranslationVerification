@@ -1,0 +1,47 @@
+(* HW2 Funny T0/T1 concrete syntax. EBNF for the recursive-descent parser.
+   Tokens come from HW1's minimized DFA. Whitespace and // comments are skipped. *)
+
+module       = declaration, { declaration } ;
+declaration  = IDENT, "(", [ typed_def, { ",", typed_def } ], ")",
+               ( "=>", predicate
+               | [ "requires", predicate ], "returns", typed_def,
+                 { ",", typed_def }, [ "ensures", predicate ],
+                 [ "uses", local_def, { ",", local_def } ], statement ) ;
+typed_def    = IDENT, ":", type ;
+local_def    = IDENT, [ ":", type ] ;
+type         = "int", [ "[", "]" ] ;
+
+statement    = assignment | conditional | loop | block | assertion | assumption ;
+assignment   = target, { ",", IDENT }, "=", expression, ";" ;
+target       = IDENT, { "[", expression, "]" } ;
+conditional  = "if", "(", expression, ")", statement, [ "else", statement ] ;
+loop         = "while", "(", expression, ")",
+               [ "invariant", predicate ], statement ;
+block        = "{", { statement }, "}" ;
+assertion    = "assert", predicate, ";" ;
+assumption   = "assume", predicate, ";" ;
+
+(* The parser uses precedence climbing, equivalent to the levels below.
+   predicate has the same levels but excludes "->". *)
+expression   = implication ;
+predicate    = disjunction ;
+implication  = disjunction, [ "->", implication ] ;
+disjunction  = conjunction, { "or", conjunction } ;
+conjunction  = negation, { "and", negation } ;
+negation     = "not", negation | comparison ;
+comparison   = additive, { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ), additive } ;
+additive     = multiply, { ( "+" | "-" ), multiply } ;
+multiply     = unary, { ( "*" | "/" ), unary } ;
+unary        = "-", unary | primary ;
+primary      = INT | "true" | "false" | quantifier
+             | ( IDENT | "length" ),
+               [ "(", [ expression, { ",", expression } ], ")" ],
+               { "[", expression, "]" }
+             | "(", expression, ")" ;
+quantifier   = ( "forall" | "exists" ), "(", typed_def, "|", predicate, ")" ;
+
+(* In predicate contexts, every parenthesized expression and call argument also
+   uses predicate (so -> remains excluded throughout that subtree).
+   Precedence, low to high: -> (right), or, and, not, comparisons,
+   +/-, multiply/divide, unary minus. All binary operators except -> are left associative.
+   else attaches to the nearest preceding unmatched if. *)

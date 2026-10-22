@@ -1,0 +1,1 @@
+bad() returns r: int { r = (1 + 2; }
