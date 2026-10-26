@@ -16,6 +16,9 @@ typedef struct Node {
 static Token *tokens;
 static int token_count, token_capacity, cursor, errors;
 static int *scanner_table, *scanner_accept, scanner_start, scanner_sink;
+typedef struct { int line, col; char *message; } Diagnostic;
+static Diagnostic *diagnostics;
+static int diagnostic_count, diagnostic_capacity;
 
 static void *checked_alloc(size_t n) {
     void *p = malloc(n ? n : 1);
@@ -32,11 +35,22 @@ static char *copy_text(const char *s, size_t n) {
 
 static void diagnostic(int line, int col, const char *fmt, ...) {
     va_list ap;
-    fprintf(stderr, "%d:%d: error: ", line, col);
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    va_list length_args;
+    va_copy(length_args, ap);
+    int length = vsnprintf(NULL, 0, fmt, length_args);
+    va_end(length_args);
+    if (length < 0) { fputs("cannot format diagnostic\n", stderr); exit(2); }
+    char *message = checked_alloc((size_t)length + 1);
+    vsnprintf(message, (size_t)length + 1, fmt, ap);
     va_end(ap);
-    fputc('\n', stderr);
+    if (diagnostic_count == diagnostic_capacity) {
+        diagnostic_capacity = diagnostic_capacity ? diagnostic_capacity * 2 : 8;
+        Diagnostic *p = realloc(diagnostics, (size_t)diagnostic_capacity * sizeof(*p));
+        if (!p) { fputs("out of memory\n", stderr); exit(2); }
+        diagnostics = p;
+    }
+    diagnostics[diagnostic_count++] = (Diagnostic){line, col, message};
     errors++;
 }
 
@@ -108,8 +122,11 @@ static Token *take(void) { Token *t = current(); if (!is("EOF")) cursor++; retur
 static bool accept(const char *kind) { if (is(kind)) { take(); return true; } return false; }
 static bool expect(const char *kind, const char *display) {
     if (accept(kind)) return true;
-    diagnostic(current()->line, current()->col, "expected %s, found %s '%s'",
-               display, current()->kind, current()->text);
+    if (is("EOF"))
+        diagnostic(current()->line, current()->col, "expected %s, found end of input", display);
+    else
+        diagnostic(current()->line, current()->col, "expected %s, found '%s' (%s)",
+                   display, current()->text, current()->kind);
     return false;
 }
 
@@ -230,7 +247,10 @@ static Node *parse_primary(bool predicate) {
         expect("RPAREN", "')'");
         return inside;
     }
-    diagnostic(t->line, t->col, "expected expression, found %s '%s'", t->kind, t->text);
+    if (!strcmp(t->kind, "EOF"))
+        diagnostic(t->line, t->col, "expected expression, found end of input");
+    else diagnostic(t->line, t->col, "expected expression, found '%s' (%s)",
+                    t->text, t->kind);
     if (!is("EOF") && !is("RPAREN") && !is("RBRACKET") &&
         !is("SEMICOLON") && !is("RBRACE") && !is("COMMA")) take();
     return missing();
@@ -285,6 +305,8 @@ static Node *parse_assignment(void) {
     Node *value = parse_expression(1, false);
     expect("SEMICOLON", "';'");
     if (targets->count > 1) {
+        if (strcmp(target->kind, "Var")) diagnostic(start->line, start->col,
+            "multiple assignment targets must be plain identifiers");
         if (strcmp(value->kind, "Call")) diagnostic(start->line, start->col,
             "multiple targets require a function call");
         Node *assign = node("TupleAssign", start, NULL);
@@ -335,7 +357,10 @@ static Node *parse_statement(void) {
         return n;
     }
     if (is("IDENT")) return parse_assignment();
-    diagnostic(start->line, start->col, "expected statement, found %s '%s'", start->kind, start->text);
+    if (!strcmp(start->kind, "EOF"))
+        diagnostic(start->line, start->col, "expected statement, found end of input");
+    else diagnostic(start->line, start->col, "expected statement, found '%s' (%s)",
+                    start->text, start->kind);
     Node *bad = node("Error", start, NULL);
     /* Panic: stop before the next statement or closing brace. */
     if (!is("EOF") && !is("RBRACE")) take();
@@ -376,9 +401,15 @@ static Node *parse_module(void) {
         int before = cursor;
         if (is("IDENT")) child(module, parse_declaration());
         else {
-            diagnostic(current()->line, current()->col, "expected function or formula name, found %s '%s'",
-                       current()->kind, current()->text);
-            take();
+            diagnostic(current()->line, current()->col,
+                       "expected function or formula name, found '%s' (%s)",
+                       current()->text, current()->kind);
+            /* Synchronize at the next plausible declaration head. */
+            do {
+                take();
+            } while (!is("EOF") &&
+                     !(is("IDENT") && cursor + 1 < token_count &&
+                       !strcmp(tokens[cursor + 1].kind, "LPAREN")));
         }
         if (cursor == before && !is("EOF")) take();
     }
@@ -410,6 +441,60 @@ static void print_node(const Node *n, int depth) {
     fputs("]}", stdout);
 }
 
+static const char *child_role(const Node *parent, int index) {
+    const char *kind = parent->kind;
+    if (!strcmp(kind, "Function")) {
+        static const char *roles[] = {"params", "requires", "returns", "ensures", "uses", "body"};
+        return index < 6 ? roles[index] : NULL;
+    }
+    if (!strcmp(kind, "Formula")) return index == 0 ? "params" : "predicate";
+    if (!strcmp(kind, "Assign")) return index == 0 ? "target" : "value";
+    if (!strcmp(kind, "TupleAssign")) return index == 0 ? "targets" : "call";
+    if (!strcmp(kind, "If")) {
+        static const char *roles[] = {"condition", "then", "else"};
+        return index < 3 ? roles[index] : NULL;
+    }
+    if (!strcmp(kind, "While")) {
+        static const char *roles[] = {"condition", "invariant", "body"};
+        return index < 3 ? roles[index] : NULL;
+    }
+    if (!strcmp(kind, "Set")) {
+        static const char *roles[] = {"array", "index", "value"};
+        return index < 3 ? roles[index] : NULL;
+    }
+    if (!strcmp(kind, "Index")) return index == 0 ? "array" : "index";
+    return NULL;
+}
+
+static void print_tree(const Node *n, int depth, const char *role, const char *parent_kind) {
+    for (int i = 0; i < depth; i++) fputs("  ", stdout);
+    fputs("- ", stdout);
+    if (role) printf("%s: ", role);
+    if (!strcmp(n->kind, "Missing")) {
+        if (parent_kind && !strcmp(parent_kind, "VarDef"))
+            fputs("(no explicit type)\n", stdout);
+        else if (role && (!strcmp(role, "requires") || !strcmp(role, "ensures") ||
+                          !strcmp(role, "uses") || !strcmp(role, "else") ||
+                          !strcmp(role, "invariant")))
+            fputs("(omitted)\n", stdout);
+        else fputs("(missing after error)\n", stdout);
+    }
+    else {
+        fputs(n->kind, stdout);
+        if (n->value) printf(" %s", n->value);
+        printf(" [%d:%d]\n", n->line, n->col);
+    }
+    if (depth >= 256) return;
+    for (int i = 0; i < n->count; i++)
+        print_tree(n->children[i], depth + 1, child_role(n, i), n->kind);
+}
+
+static void print_diagnostics(FILE *out) {
+    for (int i = 0; i < diagnostic_count; i++)
+        fprintf(out, "%d:%d: error: %s\n", diagnostics[i].line,
+                diagnostics[i].col, diagnostics[i].message);
+}
+
 static char *read_source(FILE *f) {
     size_t size = 0, cap = 4096;
     char *s = checked_alloc(cap);
@@ -427,18 +512,42 @@ static char *read_source(FILE *f) {
 }
 
 int main(int argc, char **argv) {
-    if (argc > 2) { fprintf(stderr, "usage: %s [file.funny]\n", argv[0]); return 2; }
-    FILE *f = argc == 2 ? fopen(argv[1], "rb") : stdin;
-    if (!f) { perror(argv[1]); return 2; }
+    bool json_output = false;
+    const char *path = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--json")) json_output = true;
+        else if (!strcmp(argv[i], "--help")) {
+            printf("usage: %s [--json] [file.funny]\n", argv[0]);
+            printf("default: readable AST tree; --json: machine-readable AST on stdout\n");
+            return 0;
+        } else if (argv[i][0] == '-' || path) {
+            fprintf(stderr, "usage: %s [--json] [file.funny]\n", argv[0]);
+            return 2;
+        } else path = argv[i];
+    }
+    FILE *f = path ? fopen(path, "rb") : stdin;
+    if (!f) { perror(path); return 2; }
     char *source = read_source(f);
     if (f != stdin) fclose(f);
     initialize_scanner();
     tokenize(source);
     Node *module = parse_module();
-    print_node(module, 0);
-    putchar('\n');
+    if (json_output) {
+        print_node(module, 0);
+        putchar('\n');
+        print_diagnostics(stderr);
+    } else {
+        if (errors) {
+            printf("Diagnostics (%d):\n", errors);
+            print_diagnostics(stdout);
+            fputs("\nPartial AST:\n", stdout);
+        } else fputs("AST:\n", stdout);
+        print_tree(module, 0, NULL, NULL);
+    }
     free(source);
     free(scanner_table);
     free(scanner_accept);
+    for (int i = 0; i < diagnostic_count; i++) free(diagnostics[i].message);
+    free(diagnostics);
     return errors ? 1 : 0;
 }

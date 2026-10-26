@@ -1,47 +1,110 @@
-(* HW2 Funny T0/T1 concrete syntax. EBNF for the recursive-descent parser.
-   Tokens come from HW1's minimized DFA. Whitespace and // comments are skipped. *)
+(* Funny HW2: final grammar of the implemented syntax.
+   EBNF: A = B, C ; sequence; | alternative; [ ] optional; { } repetition.
+   "..." is a literal; /.../ denotes an ASCII regular expression.
+   Uppercase names are lexer tokens defined below or in the literal table.
+   The scanner applies longest match; on equal length a keyword wins over IDENT.
+   All input is ASCII. Line and column positions start at 1. *)
 
-module       = declaration, { declaration } ;
-declaration  = IDENT, "(", [ typed_def, { ",", typed_def } ], ")",
-               ( "=>", predicate
-               | [ "requires", predicate ], "returns", typed_def,
-                 { ",", typed_def }, [ "ensures", predicate ],
-                 [ "uses", local_def, { ",", local_def } ], statement ) ;
-typed_def    = IDENT, ":", type ;
-local_def    = IDENT, [ ":", type ] ;
-type         = "int", [ "[", "]" ] ;
+(* ---------------- Lexical layer: HW1 DFA rules ---------------- *)
 
-statement    = assignment | conditional | loop | block | assertion | assumption ;
-assignment   = target, { ",", IDENT }, "=", expression, ";" ;
-target       = IDENT, { "[", expression, "]" } ;
-conditional  = "if", "(", expression, ")", statement, [ "else", statement ] ;
-loop         = "while", "(", expression, ")",
-               [ "invariant", predicate ], statement ;
-block        = "{", { statement }, "}" ;
-assertion    = "assert", predicate, ";" ;
-assumption   = "assume", predicate, ";" ;
+IDENT    = /[A-Za-z_][A-Za-z0-9_]*/ ;
+INT      = /0|[1-9][0-9]*/ ;
+BAD_INT  = /0[0-9]+/ ;               (* lexical error, e.g. 00 or 01 *)
+WS       = /[ \t\r\n]+/ ;            (* skipped *)
+COMMENT  = /\/\/[^\r\n]*/ ;         (* skipped: // until end of line *)
+(* EOF is a virtual token appended after all source bytes; it has no lexeme. *)
 
-(* The parser uses precedence climbing, equivalent to the levels below.
-   predicate has the same levels but excludes "->". *)
-expression   = implication ;
-predicate    = disjunction ;
-implication  = disjunction, [ "->", implication ] ;
-disjunction  = conjunction, { "or", conjunction } ;
-conjunction  = negation, { "and", negation } ;
-negation     = "not", negation | comparison ;
-comparison   = additive, { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ), additive } ;
-additive     = multiply, { ( "+" | "-" ), multiply } ;
-multiply     = unary, { ( "*" | "/" ), unary } ;
-unary        = "-", unary | primary ;
-primary      = INT | "true" | "false" | quantifier
-             | ( IDENT | "length" ),
-               [ "(", [ expression, { ",", expression } ], ")" ],
-               { "[", expression, "]" }
-             | "(", expression, ")" ;
-quantifier   = ( "forall" | "exists" ), "(", typed_def, "|", predicate, ")" ;
+(* Exact keyword matches win over IDENT at equal length. For example,
+   "requires" is KW_REQUIRES, while "requiresx" is IDENT. *)
+KW_FUNCTION  = "function" ;  KW_RETURNS   = "returns" ;
+KW_WHILE     = "while" ;     KW_IF        = "if" ;
+KW_ELSE      = "else" ;      KW_ASSERT    = "assert" ;
+KW_ASSUME    = "assume" ;    KW_INVARIANT = "invariant" ;
+KW_LENGTH    = "length" ;    KW_REQUIRES  = "requires" ;
+KW_ENSURES   = "ensures" ;   KW_USES      = "uses" ;
+KW_FORALL    = "forall" ;    KW_EXISTS    = "exists" ;
+KW_TRUE      = "true" ;      KW_FALSE     = "false" ;
+KW_NOT       = "not" ;       KW_AND       = "and" ;
+KW_OR        = "or" ;        KW_INT       = "int" ;
 
-(* In predicate contexts, every parenthesized expression and call argument also
-   uses predicate (so -> remains excluded throughout that subtree).
-   Precedence, low to high: -> (right), or, and, not, comparisons,
-   +/-, multiply/divide, unary minus. All binary operators except -> are left associative.
-   else attaches to the nearest preceding unmatched if. *)
+(* The language document allows only letters and digits in identifiers.
+   HW1's actual IDENT also accepts underscores; HW2 preserves that scanner
+   rule. This is a documented lexical deviation, not an undefined token. *)
+
+(* Literal punctuation/operators, with the HW1 token names:
+   == EQ; != NE; <= LE; >= GE; < LT; > GT; = ASSIGN;
+   + PLUS; - MINUS; * STAR; / SLASH; => IMPLIES; -> ARROW;
+   ( LPAREN; ) RPAREN; [ LBRACKET; ] RBRACKET;
+   { LBRACE; } RBRACE; , COMMA; ; SEMICOLON; : COLON; | PIPE.
+   "function" is reserved by HW1 but is not a declaration prefix in Funny.
+   "length" is reserved by HW1; the expression parser treats it as a name. *)
+
+(* ---------------- Syntactic layer ---------------- *)
+
+module          = declaration, { declaration }, EOF ;
+declaration     = IDENT, "(", [ typed_def, { ",", typed_def } ], ")",
+                  ( "=>", predicate
+                  | [ "requires", predicate ], "returns", typed_def,
+                    { ",", typed_def }, [ "ensures", predicate ],
+                    [ "uses", local_def, { ",", local_def } ], statement ) ;
+typed_def       = IDENT, ":", type ;
+local_def       = IDENT, [ ":", type ] ;
+type            = "int", [ "[", "]" ] ;
+
+statement       = assignment | conditional | loop | block
+                | assertion | assumption ;
+assignment      = IDENT, ( { "[", condition, "]" }, "=", condition, ";"
+                           | ",", IDENT, { ",", IDENT }, "=", call_condition, ";" ) ;
+conditional     = "if", "(", condition, ")", statement, [ "else", statement ] ;
+loop            = "while", "(", condition, ")",
+                  [ "invariant", predicate ], statement ;
+block           = "{", { statement }, "}" ;
+assertion       = "assert", predicate, ";" ;
+assumption      = "assume", predicate, ";" ;
+
+(* In conditions/ordinary expression positions, implication is allowed.
+   Parentheses, call arguments and indices inherit the current mode. *)
+condition       = implication ;
+implication     = condition_or, [ "->", implication ] ;
+condition_or    = condition_and, { "or", condition_and } ;
+condition_and   = condition_not, { "and", condition_not } ;
+condition_not   = "not", condition_not | condition_compare ;
+condition_compare = condition_add, { comparison_op, condition_add } ;
+condition_add   = condition_multiply, { ( "+" | "-" ), condition_multiply } ;
+condition_multiply = condition_unary, { ( "*" | "/" ), condition_unary } ;
+condition_unary = "-", condition_unary | condition_primary ;
+condition_primary = INT | "true" | "false" | quantifier
+                  | ( IDENT | "length" ),
+                    [ "(", [ condition, { ",", condition } ], ")" ],
+                    { "[", condition, "]" }
+                  | "(", condition, ")" ;
+call_condition  = ( IDENT | "length" ), "(",
+                  [ condition, { ",", condition } ], ")" ;
+
+(* Predicates have the same precedence levels, but no implication at any
+   nesting depth: not inside parentheses, arguments or array indices. *)
+predicate       = predicate_or ;
+predicate_or    = predicate_and, { "or", predicate_and } ;
+predicate_and   = predicate_not, { "and", predicate_not } ;
+predicate_not   = "not", predicate_not | predicate_compare ;
+predicate_compare = predicate_add, { comparison_op, predicate_add } ;
+predicate_add   = predicate_multiply, { ( "+" | "-" ), predicate_multiply } ;
+predicate_multiply = predicate_unary, { ( "*" | "/" ), predicate_unary } ;
+predicate_unary = "-", predicate_unary | predicate_primary ;
+predicate_primary = INT | "true" | "false" | quantifier
+                  | ( IDENT | "length" ),
+                    [ "(", [ predicate, { ",", predicate } ], ")" ],
+                    { "[", predicate, "]" }
+                  | "(", predicate, ")" ;
+quantifier      = ( "forall" | "exists" ), "(", typed_def,
+                  "|", predicate, ")" ;
+comparison_op   = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+
+(* Precedence, weakest to strongest: -> (right associative), or, and, not,
+   comparisons, +/- (binary), * and /, unary minus. All other binary operators
+   associate left. A dangling else attaches to the nearest unmatched if.
+
+   Valid tuple assignment requires a call on the right and plain identifiers
+   on the left. The parser's recovery may still create a partial AST for an
+   invalid target or RHS, but it reports a syntax error and returns status 1.
+   Expression types, names, and function arities are checked in HW3. *)

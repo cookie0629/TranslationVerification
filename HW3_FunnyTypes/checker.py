@@ -326,7 +326,7 @@ def main() -> int:
     options = argument_parser.parse_args()
     try:
         source = Path(options.source).read_bytes() if options.source else sys.stdin.buffer.read()
-        result = subprocess.run([str(options.parser)], input=source, capture_output=True, timeout=20)
+        result = subprocess.run([str(options.parser), "--json"], input=source, capture_output=True, timeout=20)
         ast = json.loads(result.stdout)
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
         print(f"checker: {exc}", file=sys.stderr)

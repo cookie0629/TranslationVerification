@@ -1,0 +1,5 @@
+name_1(a_2: int) returns r_3: int {
+  r_3 = a_2 + 1;
+}
+
+requiresx() returns result: int { result = 0; }

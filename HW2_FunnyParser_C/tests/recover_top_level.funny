@@ -1,0 +1,2 @@
+function() returns broken: int { broken = 1; }
+good() returns result: int { result = 2; }
