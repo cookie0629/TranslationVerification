@@ -12,7 +12,7 @@ CHECKER = ROOT.parent / "checker.py"
 
 def run(source):
     proc = subprocess.run(
-        [sys.executable, str(CHECKER), str(ROOT / source)],
+        [sys.executable, str(CHECKER), "--json", str(ROOT / source)],
         capture_output=True, text=True, timeout=30,
     )
     assert proc.returncode in (0, 1), (source, proc.stderr)
@@ -79,7 +79,60 @@ for source, expected in references.items():
     assert code == 1 and ast["kind"] == "Module", (source, code, errors)
     for line, column, text in expected:
         assert any(d["line"] == line and d["column"] == column and text in d["message"] for d in errors), (source, expected, errors)
-    assert all(isinstance(d["line"], int) and isinstance(d["column"], int) and d["message"] for d in errors)
+    assert all(isinstance(d["line"], int) and isinstance(d["column"], int)
+               and d["category"] and d["message"] for d in errors)
+    assert errors == sorted(errors, key=lambda d: (d["line"], d["column"]))
+    if source == "syntax_error.funny":
+        assert errors[0]["category"] == "SyntaxError"
+    if source == "bad_calls.funny":
+        assert any(d["category"] == "ArityError" for d in errors)
     print("PASS", source)
 
 print("9/9 test programs passed")
+
+for name, expected_code, heading in (
+    ("valid.funny", 0, "Type check: OK"),
+    ("errors.funny", 1, "Type check: FAILED (9 error(s))"),
+    ("syntax_error.funny", 1, "Type check: FAILED (1 error(s))"),
+):
+    proc = subprocess.run(
+        [sys.executable, str(CHECKER), str(ROOT / name)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == expected_code, (name, proc.returncode, proc.stderr)
+    output = proc.stdout if expected_code == 0 else proc.stderr
+    assert output.startswith(heading), (name, output)
+    if expected_code == 0:
+        assert proc.stderr == "" and "Annotated AST:" in output and "- Module [1:1]" in output
+    else:
+        assert proc.stdout == "" and "Use --tree" in output and "- Module [1:1]" not in output
+    if name == "errors.funny":
+        assert "[NameError] duplicate declaration 'a'" in output
+        assert "[TypeError] assignment to 'tmp': expected int, got bool" in output
+        assert "[AssignmentError] cannot assign to read-only parameter 'a'" in output
+        assert "[InferenceError] cannot infer type of local 'inferred'" in output
+        assert output.index("1:13 [NameError]") < output.index("10:1 [NameError]")
+    if name == "syntax_error.funny":
+        assert "1:34 [SyntaxError] expected ')'" in output
+    print("PASS readable terminal output", name)
+
+tree = subprocess.run(
+    [sys.executable, str(CHECKER), "--tree", str(ROOT / "errors.funny")],
+    capture_output=True, text=True, timeout=30,
+)
+assert tree.returncode == 1 and tree.stdout == ""
+assert tree.stderr.index("Diagnostics (source order):") < tree.stderr.index("Annotated AST")
+assert "- Module [1:1]" in tree.stderr and "Var missing : <error>" in tree.stderr
+print("PASS detailed error tree")
+
+lexical = subprocess.run(
+    [sys.executable, str(CHECKER), "--json"],
+    input="bad() returns r:int { r = 01; }",
+    capture_output=True, text=True, timeout=30,
+)
+assert lexical.returncode == 1
+lexical_diagnostics = json.loads(lexical.stdout)["diagnostics"]
+assert any(d["category"] == "LexicalError" and "leading zero" in d["message"]
+           for d in lexical_diagnostics)
+assert "[LexicalError]" in lexical.stderr
+print("PASS lexical error notification")

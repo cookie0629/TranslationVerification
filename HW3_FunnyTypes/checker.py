@@ -43,8 +43,11 @@ class Analyzer:
         }
         self.scopes: list[dict[str, Symbol]] = []
 
-    def error(self, node: dict, message: str) -> None:
-        self.errors.append({"line": node["line"], "column": node["column"], "message": message})
+    def error(self, node: dict, message: str, category: str = "TypeError") -> None:
+        self.errors.append({
+            "line": node["line"], "column": node["column"],
+            "category": category, "message": message,
+        })
 
     @staticmethod
     def kind(node: dict) -> str:
@@ -89,7 +92,7 @@ class Analyzer:
         for declaration in self.children(self.ast):
             name = declaration.get("value", "")
             if name in self.globals:
-                self.error(declaration, f"duplicate global declaration '{name}'")
+                self.error(declaration, f"duplicate global declaration '{name}'", "NameError")
                 continue
             if self.kind(declaration) == "Function":
                 params = [self.variable_type(d, True) for d in self.children(self.at(declaration, 0))]
@@ -113,7 +116,7 @@ class Analyzer:
         name = definition.get("value", "")
         current = self.scopes[-1]
         if name in current:
-            self.error(definition, f"duplicate declaration '{name}'")
+            self.error(definition, f"duplicate declaration '{name}'", "NameError")
             return
         current[name] = Symbol(name, self.variable_type(definition, required), role, definition)
 
@@ -122,7 +125,7 @@ class Analyzer:
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
-        self.error(node, f"unknown variable '{name}' (not declared in scope)")
+        self.error(node, f"unknown variable '{name}' (not declared in scope)", "NameError")
         return None
 
     def check_call(self, node: dict, use: str) -> list[str]:
@@ -132,21 +135,21 @@ class Analyzer:
         actual = [self.expression(argument) for argument in arguments]
         if signature is None:
             node["type"] = None
-            self.error(node, f"unknown function or formula '{name}'")
+            self.error(node, f"unknown function or formula '{name}'", "NameError")
             return [ERROR]
         if use == "value" and signature.kind == "formula":
             self.error(node, f"formula '{name}' cannot be used as a value")
         if use == "tuple" and signature.kind == "formula":
             self.error(node, f"formula '{name}' cannot be used in tuple assignment")
         if len(arguments) != len(signature.params):
-            self.error(node, f"call to '{name}' expects {len(signature.params)} argument(s), got {len(arguments)}")
+            self.error(node, f"call to '{name}' expects {len(signature.params)} argument(s), got {len(arguments)}", "ArityError")
         for index, (argument, got, wanted) in enumerate(zip(arguments, actual, signature.params), 1):
             self.require(got, wanted, argument, f"argument {index} of '{name}'")
         node["type"] = self.signature_text(signature) if use == "tuple" else (
             signature.returns[0] if len(signature.returns) == 1 else None
         )
         if use != "tuple" and len(signature.returns) != 1:
-            self.error(node, f"call to '{name}' has {len(signature.returns)} results; single value required")
+            self.error(node, f"call to '{name}' has {len(signature.returns)} results; single value required", "ArityError")
             return [ERROR]
         return signature.returns
 
@@ -163,7 +166,7 @@ class Analyzer:
             if symbol is None:
                 return self.annotated(node, ERROR)
             if symbol.type == UNKNOWN:
-                self.error(node, f"local '{symbol.name}' used before its type is inferred")
+                self.error(node, f"local '{symbol.name}' used before its type is inferred", "InferenceError")
                 return self.annotated(node, ERROR)
             return self.annotated(node, symbol.type)
         if kind == "Call":
@@ -203,7 +206,7 @@ class Analyzer:
             definition = self.at(node, 0)
             name = definition.get("value", "")
             if any(name in scope for scope in self.scopes):
-                self.error(definition, f"quantifier variable '{name}' duplicates a visible declaration")
+                self.error(definition, f"quantifier variable '{name}' duplicates a visible declaration", "NameError")
             self.scopes.append({})
             self.declare(definition, "quantifier", True)
             body = self.expression(self.at(node, 1), predicate=True)
@@ -221,14 +224,14 @@ class Analyzer:
 
     def assign_target(self, target: dict, got: str) -> None:
         if self.kind(target) != "Var":
-            self.error(target, "assignment target must be a variable")
+            self.error(target, "assignment target must be a variable", "AssignmentError")
             return
         symbol = self.lookup(target)
         if symbol is None:
             self.annotated(target, ERROR)
             return
         if symbol.role in ("parameter", "quantifier"):
-            self.error(target, f"cannot assign to read-only {symbol.role} '{symbol.name}'")
+            self.error(target, f"cannot assign to read-only {symbol.role} '{symbol.name}'", "AssignmentError")
         if got == ERROR:
             self.annotated(target, symbol.type)
             return
@@ -238,7 +241,7 @@ class Analyzer:
                 symbol.definition["type"] = got
                 symbol.definition["inferred"] = True
             else:
-                self.error(target, f"cannot infer type of local '{symbol.name}' from {got}")
+                self.error(target, f"cannot infer type of local '{symbol.name}' from {got}", "InferenceError")
         else:
             self.require(got, symbol.type, target, f"assignment to '{symbol.name}'")
         self.annotated(target, symbol.type)
@@ -256,12 +259,12 @@ class Analyzer:
         elif kind == "TupleAssign":
             call = self.at(node, 1)
             if self.kind(call) != "Call":
-                self.error(call, "tuple assignment requires a function call")
+                self.error(call, "tuple assignment requires a function call", "AssignmentError")
                 return
             returns = self.check_call(call, "tuple")
             targets = self.children(self.at(node, 0))
             if returns != [ERROR] and len(returns) != len(targets):
-                self.error(node, f"tuple assignment has {len(targets)} target(s), call returns {len(returns)} value(s)")
+                self.error(node, f"tuple assignment has {len(targets)} target(s), call returns {len(returns)} value(s)", "ArityError")
             for target, got in zip(targets, returns):
                 self.assign_target(target, got)
         elif kind == "If":
@@ -299,7 +302,7 @@ class Analyzer:
         self.statement(self.at(node, 5))
         for symbol in self.scopes[0].values():
             if symbol.role == "local" and symbol.type == UNKNOWN:
-                self.error(symbol.definition, f"cannot infer type of local '{symbol.name}': no valid assignment")
+                self.error(symbol.definition, f"cannot infer type of local '{symbol.name}': no valid assignment", "InferenceError")
 
     def run(self) -> None:
         self.signatures()
@@ -313,31 +316,128 @@ def parser_diagnostics(stderr: str) -> list[dict]:
     for line in stderr.splitlines():
         match = re.match(r"(\d+):(\d+): error: (.*)", line)
         if match:
-            diagnostics.append({"line": int(match[1]), "column": int(match[2]), "message": match[3]})
+            message = match[3]
+            lexical = message.startswith((
+                "invalid character", "non-ASCII byte", "integer with leading zero",
+            ))
+            diagnostics.append({
+                "line": int(match[1]), "column": int(match[2]),
+                "category": "LexicalError" if lexical else "SyntaxError",
+                "message": message,
+            })
         elif line.strip():
-            diagnostics.append({"line": 0, "column": 0, "message": line.strip()})
+            diagnostics.append({
+                "line": 0, "column": 0,
+                "category": "ParserError", "message": line.strip(),
+            })
     return diagnostics
 
 
+def child_role(parent: dict, index: int) -> str | None:
+    roles = {
+        "Function": ("params", "requires", "returns", "ensures", "uses", "body"),
+        "Formula": ("params", "predicate"),
+        "Assign": ("target", "value"),
+        "TupleAssign": ("targets", "call"),
+        "If": ("condition", "then", "else"),
+        "While": ("condition", "invariant", "body"),
+        "Set": ("array", "index", "value"),
+        "Index": ("array", "index"),
+        "Quantifier": ("variable", "predicate"),
+        "Binary": ("left", "right"),
+        "Unary": ("operand",),
+    }
+    items = roles.get(parent["kind"], ())
+    return items[index] if index < len(items) else None
+
+
+def print_tree(node: dict, depth: int = 0, role: str | None = None,
+               parent_kind: str | None = None, out=sys.stdout) -> None:
+    prefix = "  " * depth + "- " + (f"{role}: " if role else "")
+    if node["kind"] == "Missing":
+        optional = {"requires", "ensures", "uses", "else", "invariant"}
+        if parent_kind == "VarDef":
+            print(prefix + "(no explicit type)", file=out)
+        elif role in optional:
+            print(prefix + "(omitted)", file=out)
+        else:
+            print(prefix + "(missing after parse error)", file=out)
+        return
+    label = node["kind"]
+    if "value" in node:
+        label += f" {node['value']}"
+    if "type" in node:
+        label += f" : {node['type'] if node['type'] is not None else '<error>'}"
+    if node.get("inferred"):
+        label += " (inferred)"
+    print(f"{prefix}{label} [{node['line']}:{node['column']}]", file=out)
+    if depth >= 256:
+        print("  " * (depth + 1) + "- ...", file=out)
+        return
+    for index, item in enumerate(node["children"]):
+        print_tree(item, depth + 1, child_role(node, index), node["kind"], out)
+
+
+def print_human(ast: dict, diagnostics: list[dict], show_tree: bool) -> None:
+    out = sys.stderr if diagnostics else sys.stdout
+    if diagnostics:
+        print(f"Type check: FAILED ({len(diagnostics)} error(s))", file=out)
+        print("Diagnostics (source order):", file=out)
+        for index, item in enumerate(diagnostics, 1):
+            print(f"  {index}. {item['line']}:{item['column']} "
+                  f"[{item['category']}] {item['message']}", file=out)
+        if show_tree:
+            print("\nAnnotated AST (contains errors):", file=out)
+        else:
+            print("\nUse --tree for the annotated AST, or --json for machine output.", file=out)
+    else:
+        print("Type check: OK", file=out)
+        print("Annotated AST:", file=out)
+    if show_tree or not diagnostics:
+        print_tree(ast, out=out)
+
+
 def main() -> int:
-    argument_parser = argparse.ArgumentParser(description="Type-check Funny source and emit annotated AST JSON")
+    argument_parser = argparse.ArgumentParser(description="Type-check Funny source")
     argument_parser.add_argument("source", nargs="?", help="Funny file; reads stdin if omitted")
     argument_parser.add_argument("--parser", type=Path, default=PARSER, help="HW2 parser executable")
+    argument_parser.add_argument("--json", action="store_true", help="emit machine-readable AST and diagnostics")
+    argument_parser.add_argument("--tree", action="store_true", help="show annotated AST even when errors occur")
     options = argument_parser.parse_args()
     try:
         source = Path(options.source).read_bytes() if options.source else sys.stdin.buffer.read()
+    except OSError as exc:
+        print(f"InputError: {exc}", file=sys.stderr)
+        return 2
+    try:
         result = subprocess.run([str(options.parser), "--json"], input=source, capture_output=True, timeout=20)
         ast = json.loads(result.stdout)
+    except FileNotFoundError:
+        print(f"RuntimeError: HW2 parser not found: {options.parser}\n"
+              "Build HW2 first (see README.md).", file=sys.stderr)
+        return 2
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
-        print(f"checker: {exc}", file=sys.stderr)
+        print(f"RuntimeError: HW2 parser failed: {exc}", file=sys.stderr)
         return 2
     diagnostics = parser_diagnostics(result.stderr.decode("utf-8", errors="replace"))
     if result.returncode == 0:
         analyzer = Analyzer(ast)
         analyzer.run()
         diagnostics.extend(analyzer.errors)
+    elif not diagnostics:
+        diagnostics.append({
+            "line": 0, "column": 0, "category": "ParserError",
+            "message": f"HW2 parser exited with status {result.returncode}",
+        })
+    diagnostics.sort(key=lambda item: (item["line"], item["column"]))
     payload = {"ast": ast, "diagnostics": diagnostics}
-    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    if options.json:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        for item in diagnostics:
+            print(f"{item['line']}:{item['column']} [{item['category']}] "
+                  f"{item['message']}", file=sys.stderr)
+    else:
+        print_human(ast, diagnostics, options.tree)
     return 1 if diagnostics else 0
 
 
