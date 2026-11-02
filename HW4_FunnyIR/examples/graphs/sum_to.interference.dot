@@ -1,0 +1,7 @@
+graph Interference {
+  "%t2" [label="%t2 / R0"];
+  "%t4" [label="%t4 / R0"];
+  "%t5" [label="%t5 / R0"];
+  "%t7" [label="%t7 / R0"];
+  "%t9" [label="%t9 / R0"];
+}

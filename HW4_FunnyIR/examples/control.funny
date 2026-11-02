@@ -1,0 +1,9 @@
+sum_to(n: int) returns r: int uses i: int {
+  r = 0;
+  i = 0;
+  while (i < n) invariant i >= 0 {
+    if (i < 3) r = r + i;
+    else r = r + 1;
+    i = i + 1;
+  }
+}

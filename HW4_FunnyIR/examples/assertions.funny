@@ -1,0 +1,5 @@
+safe(x: int) returns r: int {
+  assume x >= 0;
+  r = x + 1;
+  assert r > x;
+}

@@ -1,0 +1,77 @@
+Funny IR, version 1
+Optimizations: constants, algebra, dce
+
+Function sum_to(n:int) -> (r:int)
+Before optimization:
+  B0 (entry):
+    %t0 = 0
+    r = %t0
+    %t1 = 0
+    i = %t1
+    jump B1
+  B1 (while_header):
+    invariant <AST at 4:29>
+    %t2 = i < n
+    branch %t2 ? B2 : B3
+  B2 (while_body):
+    %t3 = 3
+    %t4 = i < %t3
+    branch %t4 ? B4 : B5
+  B3 (while_exit):
+    return r
+  B4 (if_then):
+    %t5 = r + i
+    r = %t5
+    jump B6
+  B5 (if_else):
+    %t6 = 1
+    %t7 = r + %t6
+    r = %t7
+    jump B6
+  B6 (if_join):
+    %t8 = 1
+    %t9 = i + %t8
+    i = %t9
+    jump B1
+After optimization:
+  B0 (entry):
+    r = 0
+    i = 0
+    jump B1
+  B1 (while_header):
+    invariant <AST at 4:29>
+    %t2 = i < n
+    branch %t2 ? B2 : B3
+  B2 (while_body):
+    %t4 = i < 3
+    branch %t4 ? B4 : B5
+  B3 (while_exit):
+    return r
+  B4 (if_then):
+    %t5 = r + i
+    r = %t5
+    jump B6
+  B5 (if_else):
+    %t7 = r + 1
+    r = %t7
+    jump B6
+  B6 (if_join):
+    %t9 = i + 1
+    i = %t9
+    jump B1
+CFG:
+  B0 -> B1
+  B1 -> B2, B3
+  B2 -> B4, B5
+  B3 -> exit
+  B4 -> B6
+  B5 -> B6
+  B6 -> B1
+Interference graph (optimized temporaries):
+  %t2: (none)
+  %t4: (none)
+  %t5: (none)
+  %t7: (none)
+  %t9: (none)
+Register colors: %t2=R0, %t4=R0, %t5=R0, %t7=R0, %t9=R0
+Metrics (before -> after): instructions 22 -> 17; temporaries 10 -> 5; colors 1 -> 1

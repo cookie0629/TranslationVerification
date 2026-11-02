@@ -1,0 +1,13 @@
+inc(x: int) returns y: int { y = x + 1; }
+
+pair(x: int) returns a: int, b: int {
+  a = x;
+  b = x + 2;
+}
+
+main(input: int[]) returns output: int[], total: int uses a: int, b: int {
+  output = input;
+  a, b = pair(output[0]);
+  output[0] = inc(a);
+  total = b + length(output);
+}

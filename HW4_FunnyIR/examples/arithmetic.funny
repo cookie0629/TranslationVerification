@@ -1,0 +1,5 @@
+calc(a: int) returns r: int uses x: int, unused: int {
+  x = a + 0;
+  r = x * 1 + 2 * 3;
+  unused = 77;
+}

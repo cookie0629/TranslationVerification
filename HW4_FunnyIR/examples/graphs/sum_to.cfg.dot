@@ -1,0 +1,18 @@
+digraph CFG {
+  node [shape=box];
+  B0 [label="B0: entry"];
+  B0 -> B1;
+  B1 [label="B1: while_header"];
+  B1 -> B2;
+  B1 -> B3;
+  B2 [label="B2: while_body"];
+  B2 -> B4;
+  B2 -> B5;
+  B3 [label="B3: while_exit"];
+  B4 [label="B4: if_then"];
+  B4 -> B6;
+  B5 [label="B5: if_else"];
+  B5 -> B6;
+  B6 [label="B6: if_join"];
+  B6 -> B1;
+}

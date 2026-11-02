@@ -1,0 +1,5 @@
+logic(x: int) returns r: int {
+  r = 0;
+  if (x == 0 or 10 / x > 2) r = 1;
+  if (x == 0 -> x < 1) r = r + 1;
+}
