@@ -184,7 +184,7 @@ def main() -> int:
     parser.add_argument("--ast", type=Path, help="HW3 annotated AST JSON instead of source")
     parser.add_argument("--checker", type=Path, default=DEFAULT_CHECKER)
     parser.add_argument("--parser", type=Path, help="HW2 parser executable for the HW3 stage")
-    parser.add_argument("--json", action="store_true", help="machine-readable IR/CFG/graph JSON")
+    parser.add_argument("--json", action="store_true", help="indented, machine-readable IR/CFG/graph JSON")
     parser.add_argument("--dot-dir", type=Path, help="write CFG and interference DOT files")
     parser.add_argument("--no-opt", action="store_true", help="disable all optimizations")
     parser.add_argument("--no-const", action="store_true", help="disable local constant propagation/folding")
@@ -203,7 +203,7 @@ def main() -> int:
             paths = write_dot(program, options.dot_dir)
             print("Wrote DOT: " + ", ".join(str(path) for path in paths), file=sys.stderr)
         if options.json:
-            print(json.dumps(program, ensure_ascii=False, separators=(",", ":")))
+            print(json.dumps(program, ensure_ascii=False, indent=2))
         else:
             print(format_program(program), end="")
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:

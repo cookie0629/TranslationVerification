@@ -76,6 +76,9 @@ with TemporaryDirectory() as temporary:
         print("PASS equivalence, CFG, coloring:", file_name)
 
     arithmetic = invoke(parser, ROOT / "examples" / "arithmetic.funny")
+    assert arithmetic.stdout.startswith('{\n  "version": 1,\n')
+    assert '\n  "functions": [\n' in arithmetic.stdout
+    assert '\n      "before": {\n' in arithmetic.stdout
     program = json.loads(arithmetic.stdout)
     metrics = program["functions"][0]["metrics"]
     assert metrics["after"]["instructions"] < metrics["before"]["instructions"]
