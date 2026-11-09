@@ -1,0 +1,33 @@
+Funny IR, version 1
+Optimizations: constants, algebra, dce
+
+Function algebra(x:int) -> (r:int)
+Before optimization:
+  B0 (entry):
+    %t0 = 0
+    %t1 = x + %t0
+    a = %t1
+    %t2 = 1
+    %t3 = a * %t2
+    b = %t3
+    %t4 = 1
+    %t5 = b / %t4
+    r = %t5
+    return r
+After optimization:
+  B0 (entry):
+    %t1 = x
+    a = %t1
+    %t3 = a
+    b = %t3
+    %t5 = b
+    r = %t5
+    return r
+CFG:
+  B0 -> exit
+Interference graph (optimized temporaries):
+  %t1: (none)
+  %t3: (none)
+  %t5: (none)
+Register colors: %t1=R0, %t3=R0, %t5=R0
+Metrics (before -> after): instructions 10 -> 7; temporaries 6 -> 3; colors 1 -> 1

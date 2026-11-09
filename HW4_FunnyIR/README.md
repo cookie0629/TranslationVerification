@@ -42,6 +42,25 @@ python hw4.py --ast annotated.json
 
 Текстовый вывод содержит IR **до и после** оптимизации, рёбра CFG, граф конфликтов временных значений, назначенные цвета регистров и метрики. `--json` выводит ту же структуру с вложенными отступами: функции, версии `before`/`after`, блоки и инструкции видны отдельно. Для короткого просмотра в терминале используйте запуск без `--json`. Готовые примеры: [арифметика и оптимизация](examples/arithmetic.ir.txt), [ветвление и цикл](examples/control.ir.txt), [CFG в DOT](examples/graphs/sum_to.cfg.dot), [граф конфликтов в DOT](examples/graphs/sum_to.interference.dot).
 
+### Демонстрация флага `--no-algebra`
+
+Файл [algebra.funny](examples/algebra.funny) содержит все три выражения `x + 0`, `a * 1` и `b / 1`. Из каталога `HW4_FunnyIR` выполните:
+
+```powershell
+python hw4.py examples\algebra.funny
+python hw4.py --no-algebra examples\algebra.funny
+```
+
+В секции `After optimization` результат различается так:
+
+| Правило | Обычный запуск | С `--no-algebra` |
+| --- | --- | --- |
+| `x + 0` | `%t1 = x` | `%t1 = x + 0` |
+| `a * 1` | `%t3 = a` | `%t3 = a * 1` |
+| `b / 1` | `%t5 = b` | `%t5 = b / 1` |
+
+Полные снимки вывода: [с алгебраическими упрощениями](examples/algebra.enabled.ir.txt) и [без них](examples/algebra.disabled.ir.txt). В обоих запусках распространение констант и DCE остаются включёнными. Поэтому константы `0` и `1` уже подставлены в операнды, а число инструкций одинаково (`10 → 7`): флаг меняет сами операции на `copy`, а не обязательно сокращает количество инструкций.
+
 ## Формат IR и API для кодогенерации
 
 Машинный JSON имеет верхние поля `version: 1`, `formulas`, `functions`, `optimizations`. Для каждой функции хранятся `before`, `after` и `metrics`. Каждая версия функции содержит `name`, `params`, `returns`, `locals`, `contracts`, `entry`, `temp_types`, `blocks`, `liveness`, `interference`, `metrics`.

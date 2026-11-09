@@ -1,0 +1,5 @@
+algebra(x: int) returns r: int uses a: int, b: int {
+  a = x + 0;
+  b = a * 1;
+  r = b / 1;
+}

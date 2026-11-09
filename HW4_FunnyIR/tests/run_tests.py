@@ -36,6 +36,7 @@ with TemporaryDirectory() as temporary:
     assert build.returncode == 0, build.stderr
 
     cases = {
+        "algebra.funny": ("algebra", [([0], [0]), ([7], [7]), ([-3], [-3])]),
         "arithmetic.funny": ("calc", [([0], [6]), ([5], [11]), ([-2], [4]),
                                           ([2147483647], [-2147483643])]),
         "control.funny": ("sum_to", [([0], [0]), ([2], [1]), ([5], [5])]),
@@ -102,6 +103,19 @@ with TemporaryDirectory() as temporary:
                for block in no_dce["functions"][0]["after"]["blocks"]
                for instruction in block["instructions"])
     print("PASS independent optimization flags and metrics")
+
+    algebra_source = ROOT / "examples" / "algebra.funny"
+    enabled = json.loads(invoke(parser, algebra_source).stdout)
+    disabled = json.loads(invoke(parser, algebra_source, "--no-algebra").stdout)
+    def operators(result):
+        return {instruction["operator"]
+                for block in result["functions"][0]["after"]["blocks"]
+                for instruction in block["instructions"] if instruction["op"] == "binary"}
+    assert operators(enabled) == set()
+    assert operators(disabled) == {"+", "*", "/"}
+    assert enabled["functions"][0]["metrics"]["after"]["instructions"] == 7
+    assert disabled["functions"][0]["metrics"]["after"]["instructions"] == 7
+    print("PASS algebra on/off demonstration")
 
     spec_result = invoke(parser, REPOSITORY / "HW3_FunnyTypes" / "tests" / "valid.funny")
     assert spec_result.returncode == 0, spec_result.stderr
