@@ -1,0 +1,28 @@
+-- The corrected P09 graph removes the req self-loop.
+MODULE main
+VAR
+  state : {idle, req, ack, error};
+ASSIGN
+  init(state) := idle;
+  next(state) := case
+    state = idle  : req;
+    state = req   : ack;
+    state = ack   : idle;
+    state = error : error;
+  esac;
+DEFINE
+  at_idle  := state = idle;
+  at_req   := state = req;
+  at_ack   := state = ack;
+  at_error := state = error;
+
+-- S1: no reachable error state.
+LTLSPEC G !at_error
+-- S2: every acknowledgement is followed by idle.
+LTLSPEC G (at_ack -> X at_idle)
+-- S3: a pending request stays pending or becomes acknowledged next.
+LTLSPEC G (at_req -> X (at_req | at_ack))
+-- L1: every request eventually receives an acknowledgement (true here).
+LTLSPEC G (at_req -> F at_ack)
+-- C1, CTL: there exists a path to an acknowledgement.
+SPEC EF at_ack
